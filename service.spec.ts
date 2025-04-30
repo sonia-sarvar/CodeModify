@@ -1,61 +1,110 @@
-package ext.cummins.part.dataUtilities;
+package ext.cummins.part.mvc.builders;
 
-import com.ptc.core.components.descriptor.ModelContext;
-import com.ptc.core.components.factory.dataUtilities.DefaultDataUtility;
-import com.ptc.core.components.rendering.guicomponents.AttributeGuiComponent;
-import com.ptc.core.components.rendering.guicomponents.UrlDisplayComponent;
-import wt.fc.ObjectReference;
+import com.ptc.jca.mvc.components.JcaComponentParams;
+import com.ptc.mvc.components.*;
+import com.ptc.netmarkets.util.beans.NmCommandBean;
+import com.ptc.netmarkets.util.beans.NmHelperBean;
+
+import static com.ptc.core.components.descriptor.DescriptorConstants.ColumnIdentifiers.ICON;
+
+import wt.fc.Persistable;
 import wt.fc.QueryResult;
-import wt.fc.ReferenceFactory;
-import wt.httpgw.GatewayServletHelper;
-import wt.httpgw.URLFactory;
+
+import org.apache.logging.log4j.*;
 import wt.part.WTPart;
 import wt.util.WTException;
-import wt.workflow.forum.DiscussionForum;
-import wt.workflow.forum.DiscussionTopic;
-import wt.workflow.forum.ForumHelper;
+import wt.vc.VersionControlHelper;
+import wt.vc.Versioned;
 
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
-public class CumminsGetDiscussionDataUtility extends DefaultDataUtility  {
+@ComponentBuilder("ext.cummins.part.mvc.builders.TestDiscussionTable")
+public class TestDiscussionTable extends AbstractComponentBuilder {
+    private static final String CLASSNAME = TestDiscussionTable.class.getName();
+    private static final Logger LOGGER = LogManager.getLogger(CLASSNAME);
+
+    private static final String TYPE = "Type";
+    private static final String TOPICS = "Topics/Comments";
+    private static final String CREATEDDATE = "DATE";
+    private static final String VERSION_VIEW_DISPLAY_NAME = "Version";
 
     @Override
-    public Object getDataValue(String s, Object o, ModelContext modelContext) throws WTException {
-        System.out.println("s:"+s);
+    public ComponentConfig buildComponentConfig(ComponentParams params) throws WTException {
+        LOGGER.debug("Enter >> DiscussionHistoryTableBuilder");
 
+        ComponentConfigFactory factory = getComponentConfigFactory();
+        TableConfig table = factory.newTableConfig();
+        table.setLabel("Discussion History");
+        table.setId("ext.cummins.part.mvc.builders.CumminsDiscussionHistoryTableBuilder");
+        table.setSelectable(false);
+        table.setShowCount(true);
+        table.setActionModel("unsubscribed_forum_actions");
+        table.setShowCustomViewLink(true);
 
+        // Add columns
+        ColumnConfig col1 = factory.newColumnConfig(ICON, true);
+        col1.setLabel(TYPE);
+        table.addComponent(col1);
 
-        List<AttributeGuiComponent> topicList = new ArrayList<AttributeGuiComponent>();
-        if(o instanceof WTPart){
-            WTPart part = (WTPart)o;
-            Enumeration<?> forums = ForumHelper.service.getForums(part);
-            if(forums.hasMoreElements()){
-                DiscussionForum  forum = (DiscussionForum) forums.nextElement();
-                Enumeration<?> topics = forum.getTopics();
-                while (topics.hasMoreElements()) {
-                    DiscussionTopic topic = (DiscussionTopic) topics.nextElement();
-                    UrlDisplayComponent urlDisplay = new UrlDisplayComponent(s, null, null, null);
+        ColumnConfig col4 = factory.newColumnConfig("versionInfo.identifier.versionId", true);
+        col4.setLabel(VERSION_VIEW_DISPLAY_NAME);
+        table.addComponent(col4);
 
-                    HashMap hashmap = new HashMap();
-                    hashmap.put("action", "ObjProps");
-                    ObjectReference objectreference = ObjectReference.newObjectReference(topic);
-                    ReferenceFactory referencefactory = new ReferenceFactory();
-                    hashmap.put("oid", referencefactory.getReferenceString(objectreference));
-                    URLFactory urlfactory = new wt.httpgw.URLFactory();
+        ColumnConfig col5 = factory.newColumnConfig("url", false);
+        col5.setDataUtilityId("getDiscussions");
+        col5.setLabel(TOPICS);
+        table.addComponent(col5);
 
-                    String url= GatewayServletHelper.buildAuthenticatedHREF(urlfactory,"wt.enterprise.URLProcessor", "URLTemplateAction", null, hashmap);
-                    urlDisplay.setLink(url);
-                    urlDisplay.setLabel(topic.getName());
-                    urlDisplay.setName(topic.getName());
-                    urlDisplay.setLabelForTheLink(topic.getName());
-                    topicList.add(urlDisplay);
-                }
+        ColumnConfig col7 = factory.newColumnConfig(CREATEDDATE, false);
+        col7.setLabel(CREATEDDATE);
+        table.addComponent(col7);
 
+        LOGGER.debug("End >> CumminsDiscussionHistoryTableBuilder");
+        return table;
+    }
+
+    @Override
+    public Object buildComponentData(ComponentConfig config, ComponentParams paramComponentParams) throws WTException, IOException {
+        NmHelperBean nmHelperBean = ((JcaComponentParams) paramComponentParams).getHelperBean();
+        NmCommandBean nmCommandBean = nmHelperBean.getNmCommandBean();
+
+        Persistable requestObj = nmCommandBean.getPrimaryOid().getWtRef().getObject();
+        WTPart wtpart = null;
+        ArrayList<Object> listobj = new ArrayList<>();
+        if (requestObj instanceof WTPart) {
+            wtpart = (WTPart) requestObj;
+            System.out.println("Request object is a WTPart: " + wtpart.getDisplayIdentifier());
+
+            QueryResult versionQuery = VersionControlHelper.service.allVersionsOf(wtpart);
+            if (versionQuery.size() == 0) {
+                System.out.println("No versions found for part: " + wtpart.getDisplayIdentifier());
+            } else {
+                System.out.println("Found " + versionQuery.size() + " versions for part: " + wtpart.getDisplayIdentifier());
             }
+
+            Set<String> versionIdentifiers = new HashSet<>();
+            while (versionQuery.hasMoreElements()) {
+                Versioned versioned = (Versioned) versionQuery.nextElement();
+                if (versioned instanceof WTPart) {
+                    WTPart versionPart = (WTPart) versioned;
+                    String versionIdentifier = versionPart.getVersionIdentifier().getValue();
+                    System.out.println("versionIdentifier: " + versionIdentifier);
+                    if (!versionIdentifiers.add(versionIdentifier)) {
+                        System.out.println("Duplicate version found: " + versionIdentifier);
+                    } else {
+                        listobj.add(versionPart);
+                        System.out.println("Fetched version: " + versionPart.getDisplayIdentifier());
+                    }
+                }
+            }
+        } else {
+            LOGGER.debug("Request object is not a WTPart.");
         }
-        return topicList;
+
+        LOGGER.debug("Total elements fetched: " + listobj.size());
+        return listobj;
     }
 }
